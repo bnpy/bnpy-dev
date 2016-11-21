@@ -9,7 +9,7 @@ when plotted in 2D.
 import scipy.linalg
 import numpy as np
 import pandas as pd
-from bnpy.util.RandUtil import rotateCovMat
+from bnpy.utils_array import rotate_2_by_2_array
 from bnpy.data import XData
 
 
@@ -32,9 +32,10 @@ V = 1.0 / 16.0
 SigmaBase = np.asarray([[V, 0], [0, V / 100.0]])
 
 # Create several Sigmas by rotating this basic covariance matrix
+# at angles of 45, 90, ...
 Sigma = np.zeros((K, D, D))
 for k in xrange(K):
-    Sigma[k] = rotateCovMat(SigmaBase, k * np.pi / 4.0)
+    Sigma[k] = rotate_2_by_2_array(SigmaBase, k * np.pi / 4.0)
 
 # Precompute cholesky decompositions
 cholSigma = np.zeros(Sigma.shape)
