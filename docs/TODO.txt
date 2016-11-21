@@ -1,0 +1,7 @@
+* Write allocation model stuff for mixtures, topics, and HMMs
+* Write obsmodel stuff for diag_gauss, mult
+* Make pretty front page
+
+* Write guide to datasets
+* Write guide to output
+* Write guide to plotting
