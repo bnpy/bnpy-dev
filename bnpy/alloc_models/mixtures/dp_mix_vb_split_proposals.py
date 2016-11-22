@@ -1,11 +1,12 @@
 import numpy as np
 import itertools
 
-from bnpy.utils_array import uidpair2kpair
+from bnpy.utils_array import uid2k
 
 def make_plans_for_split_proposals(
         data=None, LP=None, SSU=None, SSL=None, GP=None, HP=None,
         cur_uids_K=None,
+        uid_generator=None,
         s_select_procedure='all_clusters',
         **plan_kwargs):
     '''
@@ -15,9 +16,11 @@ def make_plans_for_split_proposals(
         cur_uids_K = np.arange(K)
     if s_select_procedure == 'all_clusters':
         plan_dict_list = list()
-        for uid_pair in cur_uids_K:
+        for uid in cur_uids_K:
             cur_plan_dict = dict(
-                target_uid=uid_pair,
+                uid=uid,
+                new_uids=[uid_generator.next()
+                    for k in xrange(int(plan_kwargs['s_Knew']))],
                 proposal_type='split')
             plan_dict_list.append(cur_plan_dict)
     else:
@@ -25,20 +28,18 @@ def make_plans_for_split_proposals(
             "Unrecognized s_select_procedure: " + s_select_procedure)
     return plan_dict_list
 
-def calc_seed_summaries_for_merge_proposals(
-        data=None, LP=None, SSU=None, SSL=None, GP=None, HP=None, 
-        cur_uids_K=None,
+def calc_seed_summaries_for_split_proposals(
         plan_dict_list=None,
-        m_uid_pair_list=None,
-        **m_kwargs):
+        **s_kwargs):
     ''' Compute seed summaries
 
     Returns
     -------
     seed_list : list of dicts
         Each dict has fields:
-        * uid_pair
-        * proposal_type = 'merge'
+        * uid
+        * new_uids
+        * proposal_type = 'split'
         * seed_SS_update
         * seed_SS_loss
         
@@ -46,52 +47,33 @@ def calc_seed_summaries_for_merge_proposals(
     --------
     >>> prng = np.random.RandomState(0)
     >>> K = 5
-    >>> LP = dict(resp_NK=prng.dirichlet(np.ones(K), size=2))
-    >>> seed_list = calc_seed_summaries_for_merge_proposals(
-    ...     data=None, LP=LP, m_uid_pair_list=[(0,1), (0, 2), (1, 4)])
-
-    # Verify pair (0, 1)
-    >>> seed_SS_loss_01 = seed_list[0]['seed_SS_loss']
-    >>> seed_SS_loss_01['H_resp_kA']
-    0.68191018644294066
-    >>> calc_prop_H_resp_kA(LP['resp_NK'], 0, 1)
-    0.68191018644294066
-
-    # Verify pair (1, 4)
-    >>> seed_SS_loss_14 = seed_list[-1]['seed_SS_loss']
-    >>> seed_SS_loss_14['H_resp_kA']
-    0.6384899604300408
-    >>> calc_prop_H_resp_kA(LP['resp_NK'], 1, 4)
-    0.6384899604300408
+    >>> 
     '''
-    if cur_uids_K is None:
-        cur_uids_K = np.arange(LP['resp_NK'].shape[1])
-
-    if plan_dict_list is None:
-        plan_dict_list = list()
-        for uid_pair in m_uid_pair_list:
-            plan_dict_list.append(
-                dict(
-                    proposal_type='merge',
-                    uid_pair=uid_pair))
-
+    assert plan_dict_list is not None
     for plan_dict in plan_dict_list:
-        if plan_dict['proposal_type'] != 'merge':
-            continue
-        uidA, uidB = plan_dict['uid_pair']
-        kA, kB = uidpair2kpair(cur_uids_K, uidA, uidB)
-        propseed_SS_loss = dict(
-            H_resp_kA=calc_prop_H_resp_kA(LP['resp_NK'], kA, kB))
-        plan_dict['seed_SS_update'] = None
-        plan_dict['seed_SS_loss'] = propseed_SS_loss
+        if 'proposal_type' in plan_dict:
+            if plan_dict['proposal_type'] != 'split':
+                continue
+        cur_plan_dict = s_kwargs.copy()
+        cur_plan_dict.update(plan_dict)
+        updated_plan_dict = calc_seed_dict_for_split_proposal(
+            **cur_plan_dict)
+        if updated_plan_dict is None:
+            plan_dict['status'] = False
+        else:
+            plan_dict['status'] = True
+            plan_dict.update(updated_plan_dict)
+
     return plan_dict_list
 
-def make_full_summaries_from_seed_for_merge_proposal(
+def make_full_summaries_from_seed_for_split_proposal(
         SS_update, SS_loss,
-        uid_pair=None,
+        uid=None,
+        cur_uids_K=None,
+        new_uids=None,
         seed_SS_update=None,
         seed_SS_loss=None,
-        cur_uids_K=None,
+        keep_empty_cluster=False,
         **kwargs):
     ''' Create complete summaries for updates and loss under merge proposal
 
@@ -99,55 +81,113 @@ def make_full_summaries_from_seed_for_merge_proposal(
     --------
     >>> SS_update = dict(n_K=np.asarray([100., 200., 300.]))
     >>> SS_loss = dict(H_resp_K=np.asarray([10., 20., 30.]))
-    >>> seed_SS_update = None
-    >>> seed_SS_loss = dict(H_resp_kA=11)
+    >>> seed_SS_update = dict(n_K=[60, 30, 10.])
+    >>> seed_SS_loss = dict(H_resp_K=[11., 13., 17.])
     >>> prop_SSU, prop_SSL, prop_uids_K = \\
-    ...     make_full_summaries_from_seed_for_merge_proposal(
+    ...     make_full_summaries_from_seed_for_split_proposal(
     ...         SS_update, SS_loss,
-    ...         uid_pair=(0, 1),
+    ...         uid=0,
+    ...         new_uids=[-1, -2, -3],
     ...         seed_SS_update=seed_SS_update,
     ...         seed_SS_loss=seed_SS_loss)
+    >>> prop_uids_K
+    array([ 1,  2, -1, -2, -3])
     >>> prop_SSU['n_K']
-    array([ 300.,  300.])
+    array([ 200.,  300.,   60.,   30.,   10.])
     >>> prop_SSL['H_resp_K']
-    array([ 11.,  30.])
+    array([ 20.,  30.,  11.,  13.,  17.])
+
+    # Try with keep_empty_cluster=True
+    >>> prop_SSU, prop_SSL, prop_uids_K = \\
+    ...     make_full_summaries_from_seed_for_split_proposal(
+    ...         SS_update, SS_loss,
+    ...         uid=0,
+    ...         new_uids=[-1, -2, -3],
+    ...         seed_SS_update=seed_SS_update,
+    ...         seed_SS_loss=seed_SS_loss,
+    ...         keep_empty_cluster=True)
+    >>> prop_SSU['n_K']
+    array([   0.,  200.,  300.,   60.,   30.,   10.])
     '''
     K = SS_update['n_K'].size
     if cur_uids_K is None:
         cur_uids_K = np.arange(K)
-    uidA, uidB = uid_pair
-    try:
-        kA = np.flatnonzero(cur_uids_K == uidA)[0]
-        kB = np.flatnonzero(cur_uids_K == uidB)[0]
-    except IndexError as e:
-        # Move not allowed. Send out skip signal.
-        return None, None, None
-    prop_uids_K = np.delete(cur_uids_K, kB)
+    k = uid2k(cur_uids_K, uid)
 
-    # Merge update statistics
+    if keep_empty_cluster:
+        prop_uids_K = cur_uids_K
+    else:
+        prop_uids_K = np.delete(cur_uids_K, k)
+    prop_uids_K = np.hstack([prop_uids_K, new_uids])
+
+    # Set update statistics
     prop_SS_update = dict()
     for key, cur_arr in SS_update.items():
         if cur_arr.shape[0] == K:
-            prop_arr = np.delete(cur_arr, kB, axis=0)
-            prop_arr[kA] += cur_arr[kB]
+            if keep_empty_cluster:
+                prop_arr = cur_arr.copy()
+                prop_arr[k] = 0.0
+            else:
+                prop_arr = np.delete(cur_arr, k, axis=0)
+            prop_arr = np.append(prop_arr, seed_SS_update[key], axis=0)
             prop_SS_update[key] = prop_arr
         else:
             prop_SS_update[key] = cur_arr
 
-    # Merge loss statistics
+    # Set loss statistics
     prop_SS_loss = dict()
-    prop_SS_loss['H_resp_K'] = np.delete(SS_loss['H_resp_K'], kB)
-    prop_SS_loss['H_resp_K'][kA] = seed_SS_loss['H_resp_kA']
+    for key, cur_arr in SS_loss.items():
+        if cur_arr.shape[0] == K:
+            if keep_empty_cluster:
+                prop_arr = cur_arr.copy()
+                prop_arr[k] = 0.0
+            else:
+                prop_arr = np.delete(cur_arr, k, axis=0)
+            prop_arr = np.append(prop_arr, seed_SS_loss[key], axis=0)
+            prop_SS_loss[key] = prop_arr
+        else:
+            prop_SS_loss[key] = cur_arr
     return prop_SS_update, prop_SS_loss, prop_uids_K
 
-def calc_local_params_for_merge_proposal(
-        data, LP,
+def calc_seed_dict_for_split_proposal(
+        data, *args, **s_kwargs):
+    s_kwargs['return_rLP_only'] = True
+    rLP = calc_local_params_for_split_proposal(
+        data, *args, **s_kwargs)
+    if rLP is None:
+        return None
+    summarize_local_params_for_update = \
+        s_kwargs['summarize_local_params_for_update']
+    summarize_local_params_for_loss = \
+        s_kwargs['summarize_local_params_for_loss']
+    seed_SS_update = summarize_local_params_for_update(data, rLP)
+    seed_SS_loss = summarize_local_params_for_loss(data, rLP)
+    plan_dict = dict(
+        proposal_type='split',
+        uid=s_kwargs['uid'],
+        new_uids=s_kwargs['new_uids'],
+        seed_SS_update=seed_SS_update,
+        seed_SS_loss=seed_SS_loss)
+    return plan_dict
+
+def calc_local_params_for_split_proposal(
+        data,
+        LP=None,
         GP=None,
         HP=None,
+        uid=None,
         cur_uids_K=None,
-        uid_pair=None,
-        **m_kwargs):
-    ''' Construct proposed local parameters for given merge proposal
+        new_uids=None,
+        init_global_params=None,
+        calc_local_params=None,
+        summarize_local_params_for_update=None,
+        update_global_params_from_summaries=None,
+        local_step_kwargs=None,
+        s_n_iters=10,
+        s_min_n_examples=50.0,
+        return_rLP_only=False,
+        **s_kwargs):
+    ''' Construct proposed local parameters for given split proposal
 
     Returns
     -------
@@ -156,28 +196,38 @@ def calc_local_params_for_merge_proposal(
     Examples
     --------
     >>> prng = np.random.RandomState(0)
-    >>> LP = dict(resp_NK=prng.dirichlet(np.ones(4), size=5))
-    >>> prop_LP = calc_local_params_for_merge_proposal(
-    ...     None, LP, uid_pair=(0,1))
-    >>> assert prop_LP['resp_NK'].shape[1] == 3
-    >>> assert np.allclose(1, np.sum(prop_LP['resp_NK'], axis=1))
     '''
+    if local_step_kwargs is None:
+        local_step_kwargs = dict()
     if cur_uids_K is None:
         K = LP['resp_NK'].shape[1]
         cur_uids_K = np.arange(K)
-    uidA, uidB = uid_pair
-    kA, kB = uidpair2kpair(cur_uids_K, uidA, uidB)
+    uid = uid
+    k = uid2k(cur_uids_K, uid)
 
-    prop_resp_NK = LP['resp_NK'].copy()
-    prop_resp_NK[:, kA] += prop_resp_NK[:, kB]
-    prop_resp_NK = np.delete(prop_resp_NK, kB, axis=1)
-    cur_uids_K = np.delete(cur_uids_K, kB)
-    return dict(resp_NK=prop_resp_NK)
+    # Sample restricted set
+    Knew = len(new_uids)
+    s_kwargs['K'] = Knew
 
+    r_ids = np.flatnonzero(LP['resp_NK'][:, k] > .01)
+    if len(r_ids) < s_min_n_examples:
+        return None
 
-def calc_prop_H_resp_kA(resp_NK, kA, kB):
-    K = resp_NK.shape[1]
-    tmp_N = resp_NK[:, kA] + resp_NK[:, kB]
-    tmp_N *= np.log(tmp_N)
-    prop_H_resp_kA = -1 * np.sum(tmp_N, axis=0)
-    return prop_H_resp_kA
+    r_dataset = data.make_subset(r_ids)
+    rGP, info_dict = init_global_params(
+        r_dataset, HP, **s_kwargs)
+
+    for riter in range(s_n_iters):
+        if riter > 0:    
+            rSS = summarize_local_params_for_update(data, rLP)
+            rGP = update_global_params_from_summaries(rSS, rGP, HP)
+        rLP = calc_local_params(data, rGP,
+            local_step_resp_sum_N=LP['resp_NK'][:, k],
+            **local_step_kwargs)
+
+    if return_rLP_only:
+        return rLP
+    prop_resp_NK = np.delete(LP['resp_NK'], k, axis=1)
+    prop_resp_NK = np.hstack([prop_resp_NK, rLP['resp_NK']])
+    prop_uids_K = np.hstack([np.delete(cur_uids_K, k), new_uids])
+    return dict(resp_NK=prop_resp_NK), prop_uids_K

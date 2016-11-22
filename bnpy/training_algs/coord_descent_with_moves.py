@@ -1,5 +1,6 @@
 import numpy as np
 
+import bnpy.data
 from bnpy.alloc_models.mixtures \
     import dp_mix_vb_posterior_estimator as amod
 from bnpy.obs_models \
@@ -14,6 +15,11 @@ default_alg_kwargs = dict(
     do_loss_after_local=False,
     do_loss_after_global=True,
     )
+
+
+def make_uid_generator(start, max_n_iters=1000000):
+    for i in range(1, max_n_iters):
+        yield start + i
 
 def fit(
         mod_list, data, GP, HP,
@@ -41,6 +47,7 @@ def fit(
     if uids_K is None:
         K = GP[GP.keys()[0]].shape[0]
         uids_K = np.arange(K)
+    uid_generator = make_uid_generator(K)
 
     # Parse input
     if local_step_kwargs is None:
@@ -52,6 +59,7 @@ def fit(
     if move_eval_kwargs is None:
         move_eval_kwargs = dict()
 
+
     loss_history = list()
     LP = None
     SS_update = None
@@ -61,6 +69,7 @@ def fit(
             mod_list, data, LP, SS_update, SS_loss, GP, HP,
             move_names=move_names,
             cur_uids_K=uids_K,
+            uid_generator=uid_generator,
             **move_plan_kwargs)
 
         # LOCAL STEP
@@ -78,6 +87,7 @@ def fit(
             mod_list, data, LP, SS_update, SS_loss, GP, HP,
             plan_dict_list=plan_dict_list,
             cur_uids_K=uids_K,
+            local_step_kwargs=local_step_kwargs,
             **move_plan_kwargs)
 
         # Update global params
@@ -94,6 +104,9 @@ def fit(
             cur_loss=loss,
             cur_uids_K=uids_K,
             **move_eval_kwargs)
+        print loss
+        print SS_update['n_K']
+
         loss_history.append(loss)
 
     return GP, dict(
@@ -114,10 +127,52 @@ if __name__ == '__main__':
 
     for key in kwargs:
         print key, kwargs[key]
-    GP, HP, _, local_kwargs, extra_kwargs = \
+    GP, HP, _, local_step_kwargs, extra_kwargs = \
         hmod.create_and_initialize_hierarchical_model_for_dataset(
             mod_list, X_ND, **kwargs)
 
-    fit(mod_list, X_ND, GP, HP,
-        local_kwargs=local_kwargs,
+    data = bnpy.data.XData(X_ND)
+    fit(mod_list, data, GP, HP,
+        local_step_kwargs=local_step_kwargs,
+        move_plan_kwargs=dict(
+            s_Knew=3),
         **extra_kwargs)
+    
+    """
+    import bnpy.data
+    from bnpy.alloc_models.mixtures.dp_mix_vb_split_proposals import \
+        calc_local_params_for_split_proposal, \
+        calc_seed_summaries_for_split_proposals, \
+        make_full_summaries_from_seed_for_split_proposal
+    data = bnpy.data.XData(X_ND)
+    fdict = hmod.make_function_dict(mod_list)
+    LP = fdict['calc_local_params'](data, GP, HP, **local_step_kwargs)
+
+    '''
+    s_kwargs = kwargs.copy()
+    s_kwargs.update(fdict)
+    prop_LP, prop_uids = calc_local_params_for_split_proposal(
+        data, 
+        LP=LP,
+        GP=GP,
+        HP=HP,
+        uid=0,
+        new_uids=[44,45,46],
+        local_step_kwargs=local_step_kwargs,
+        **s_kwargs)
+    '''
+
+    plan_dict_list = [
+        dict(uid=0, new_uids=[-1, -2, -3, -4]),
+        ]
+    s_kwargs = kwargs.copy()
+    s_kwargs.update(fdict)
+    seed_dict_list = calc_seed_summaries_for_split_proposals(
+        data=data, 
+        LP=LP,
+        GP=GP,
+        HP=HP,
+        plan_dict_list=plan_dict_list,
+        local_step_kwargs=local_step_kwargs,
+        **s_kwargs)
+    """

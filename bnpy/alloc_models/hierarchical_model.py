@@ -136,10 +136,13 @@ def make_plans_for_proposals(
 def make_summary_seeds_for_proposals(
         mod_list, data, LP, SSU, SSL, param_dict, hyper_dict, **kwargs):
     seed_list = list()
+    fdict = make_function_dict(mod_list)
+    cur_kwargs = kwargs.copy()
+    cur_kwargs.update(fdict)
     for mod in mod_list:
         if hasattr(mod, 'make_summary_seeds_for_proposals'):
             seed_list = mod.make_summary_seeds_for_proposals(
-                data, LP, SSU, SSL, param_dict, hyper_dict, **kwargs)
+                data, LP, SSU, SSL, param_dict, hyper_dict, **cur_kwargs)
     return seed_list
 
 def evaluate_proposals(
@@ -164,3 +167,29 @@ def evaluate_proposals(
         cur_uids_K=cur_uids_K,
         **kwargs)
     return GP, SSU, SSL, cur_loss, cur_uids_K
+
+def make_function_dict(mod_list):
+    ''' Create encapsulated functions that do not need mod_list arg
+
+    Returns
+    -------
+    fdict : dict of function handles
+    '''
+    def _calc_local_params(data, GP, LP=None, **kwargs):
+        return calc_local_params(mod_list, data, GP, LP, **kwargs)
+    def _summarize_local_params_for_update(data, LP, **kwargs):
+        return summarize_local_params_for_update(mod_list, data, LP, **kwargs)
+    def _summarize_local_params_for_loss(data, LP, **kwargs):
+        return summarize_local_params_for_loss(mod_list, data, LP, **kwargs)
+    def _update_global_params_from_summaries(SSU, GP, HP, **kwargs):
+        return update_global_params_from_summaries(
+            mod_list, SSU, GP, HP, **kwargs)
+    def _init_global_params(data, HP, **kwargs):
+        return init_global_params(mod_list, data, HP, **kwargs)
+    return dict(
+        calc_local_params=_calc_local_params,
+        summarize_local_params_for_update=_summarize_local_params_for_update,
+        summarize_local_params_for_loss=_summarize_local_params_for_loss,
+        update_global_params_from_summaries=\
+            _update_global_params_from_summaries,
+        init_global_params=_init_global_params)

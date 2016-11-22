@@ -36,6 +36,7 @@ def summarize_local_params_for_loss(data, LP, **kwargs):
 def calc_local_params(data, LP, E_log_alloc_proba_K=None,
         local_step_copy_large_arrays=False,
         local_step_min_resp_val=1e-100,
+        local_step_resp_sum_N=1.0,
         **kwargs):
     ''' Compute local parameters
 
@@ -56,6 +57,9 @@ def calc_local_params(data, LP, E_log_alloc_proba_K=None,
     resp_NK -= np.max(resp_NK, axis=1)[:, np.newaxis]
     np.exp(resp_NK, out=resp_NK)
     resp_NK /= resp_NK.sum(axis=1)[:, np.newaxis]
+
+    if isinstance(local_step_resp_sum_N, np.ndarray):
+        resp_NK *= local_step_resp_sum_N[:, np.newaxis]
     # Avoid later np.log(0.0) badness by enforcing small min value
     np.maximum(resp_NK, local_step_min_resp_val, out=resp_NK)
     return dict(resp_NK=resp_NK)

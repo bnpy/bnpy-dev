@@ -86,6 +86,7 @@ def calc_seed_summaries_for_merge_proposals(
             H_resp_kA=calc_prop_H_resp_kA(LP['resp_NK'], kA, kB))
         plan_dict['seed_SS_update'] = None
         plan_dict['seed_SS_loss'] = propseed_SS_loss
+        plan_dict['status'] = True
     return plan_dict_list
 
 def make_full_summaries_from_seed_for_merge_proposal(
