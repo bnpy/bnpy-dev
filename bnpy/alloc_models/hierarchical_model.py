@@ -5,6 +5,7 @@ def create_and_initialize_hierarchical_model_for_dataset(
     hyper_kwargs = make_hyper_kwargs(mod_list, **input_kwargs)
     init_kwargs = make_init_kwargs(mod_list, **input_kwargs)
     local_step_kwargs = make_local_step_kwargs(mod_list, **input_kwargs)
+    move_plan_kwargs = make_move_plan_kwargs(mod_list, **input_kwargs)
 
     # Now create the hyper parameters
     hyper_dict = init_hyper_params(
@@ -21,7 +22,8 @@ def create_and_initialize_hierarchical_model_for_dataset(
         if key in local_step_kwargs:
             continue
         extra_kwargs[key] = input_kwargs[key]
-    return param_dict, hyper_dict, info_dict, local_step_kwargs, extra_kwargs
+    return (param_dict, hyper_dict, info_dict,
+        local_step_kwargs, move_plan_kwargs, extra_kwargs)
 
 def make_hyper_kwargs(mod_list, **input_kwargs):
     kwargs = dict()
@@ -45,6 +47,18 @@ def make_local_step_kwargs(mod_list, **input_kwargs):
     kwargs = dict()
     for mod in mod_list:
         kwargs.update(mod.default_local_step_kwargs)
+    for key in kwargs:
+        if key in input_kwargs:
+            kwargs[key] = input_kwargs[key]
+    return kwargs
+
+def make_move_plan_kwargs(mod_list, **input_kwargs):
+    kwargs = dict()
+    for mod in mod_list:
+        if hasattr(mod, 'default_merge_kwargs'):
+            kwargs.update(mod.default_merge_kwargs)
+        if hasattr(mod, 'default_split_kwargs'):
+            kwargs.update(mod.default_split_kwargs)
     for key in kwargs:
         if key in input_kwargs:
             kwargs[key] = input_kwargs[key]
@@ -167,6 +181,23 @@ def evaluate_proposals(
         cur_uids_K=cur_uids_K,
         **kwargs)
     return GP, SSU, SSL, cur_loss, cur_uids_K
+
+def reorder_summaries_and_update_params(
+        mod_list, GP, SSU, SSL, HP,
+        cur_uids_K=None,
+        cur_loss=None,
+        **kwargs):
+    did_change = False
+    for mod in mod_list:
+        if hasattr(mod, 'reorder_summaries_and_update_params'):
+            SSU, SSL, GP, new_uids_K, did_change = \
+                mod.reorder_summaries_and_update_params(
+                    SSU, SSL, GP, HP, cur_uids_K)
+    if did_change:
+        new_loss = calc_loss_from_summaries(mod_list, GP, HP, SSU, SSL)
+    else:
+        new_loss = cur_loss
+    return GP, SSU, SSL, new_loss, cur_uids_K
 
 def make_function_dict(mod_list):
     ''' Create encapsulated functions that do not need mod_list arg

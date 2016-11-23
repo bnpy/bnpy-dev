@@ -1,17 +1,21 @@
 import numpy as np
 from scipy.special import digamma, gammaln
 
-import mix_local_dense_posterior_estimate
+import topics_local_dense_posterior_estimate
 
+from bnpy.utils_array import argsort_bigtosmall_stable
+'''
 from dp_mix_vb_proposal_planner import \
     make_plans_for_proposals, \
     make_summary_seeds_for_proposals, \
     evaluate_proposals, \
     default_split_kwargs, \
     default_merge_kwargs
-from bnpy.utils_array import argsort_bigtosmall_stable
+'''
 
-default_hyper_kwargs = dict(gamma=1.0)
+default_hyper_kwargs = dict(
+    gamma=1.0,
+    alpha=0.5)
 
 default_init_kwargs = dict(
     K=10,
@@ -19,14 +23,14 @@ default_init_kwargs = dict(
 
 default_global_step_kwargs = dict()
 default_local_step_kwargs = dict(
-    local_step_mod='mix_local_dense_posterior_estimate',
+    local_step_mod='dense_posterior_estimate',
     )
-local_module_map = dict(
-    mix_local_dense_posterior_estimate=mix_local_dense_posterior_estimate)
+local_step_module_map = dict(
+    dense_posterior_estimate=topics_local_dense_posterior_estimate)
 
 # INITIALIZE STATE
-def init_hyper_params(data=None, gamma=1.0, **hyper_kwargs):
-    return dict(gamma=gamma)
+def init_hyper_params(data=None, gamma=1.0, alpha=0.5, **hyper_kwargs):
+    return dict(gamma=gamma, alpha=alpha)
 
 def init_global_params(
         data, hyper_dict,
@@ -42,20 +46,16 @@ def init_global_params(
     '''
     K = int(K)
     param_dict = dict(
-        eta_1_K=np.ones(K),
-        eta_0_K=hyper_dict['gamma'] * np.ones(K))
+        rho_K=np.ones(K),
+        omega_K=hyper_dict['gamma'] * np.ones(K))
     info_dict = dict()
     return param_dict, info_dict
 
-
-def calc_loss_from_local_params(data, LP, param_dict, hyper_dict):
-    pass
-
 def calc_loss_from_summaries(
-        param_dict,
-        hyper_dict,
+        GP,
+        HP,
         SS,
-        SS_for_loss=None,
+        SS_loss=None,
         after_global_step=False):
     ''' Calculate loss
 
@@ -65,53 +65,56 @@ def calc_loss_from_summaries(
 
     Examples
     --------
-    >>> HD = init_hyper_params()
-    >>> zero_PD, _ = init_global_params(None, HD, K=3)
-    >>> assert np.allclose(zero_PD['eta_0_K'], HD['gamma'] * np.ones(3))
-
-    # Verify with zero counts, loss is exactly zero
-    >>> zero_SS = dict(n_K=np.asarray([0., 0., 0.]))
-    >>> calc_loss_from_summaries(
-    ...     zero_PD, HD, zero_SS, None, after_global_step=True)
-    0.0
-    >>> calc_loss_from_summaries(
-    ...     zero_PD, HD, zero_SS, None, after_global_step=False)
-    0.0
+    >>> HP = init_hyper_params()
+    >>> GP, _ = init_global_params(None, HP, K=3)
 
     # Verify with non-trivial counts, loss drops after global step
     >>> SS = dict(n_K=np.asarray([10., 10., 10.]))
-    >>> opt_PD = update_global_params_from_summaries(SS, None, HD)
     >>> calc_loss_from_summaries(
-    ...     zero_PD, HD, SS, None)
-    60.000000000000014
-    >>> calc_loss_from_summaries(
-    ...     opt_PD, HD, SS, None)
-    38.22140354461056
+    ...     GP, HP, SS, None)
     '''
-    PD = param_dict
-    HD = hyper_dict
-    # Cumulant term
-    K = SS['n_K'].size
-    loss_alloc_cumulant = \
-        - K * c_Beta(1.0, HD['gamma']) \
-        + c_Beta(PD['eta_1_K'], PD['eta_0_K'])
-    # Slack term
-    # Only needed when not immediately after a global step.
-    if after_global_step:
-        loss_alloc_slack = 0.0
-    else:
-        ngt_K = calc_ngt_K(SS['n_K'])
-        E_log_u_K, E_log_1mu_K = E_log_u_K_and_log_1mu_K(**param_dict)
-        loss_alloc_slack = -1 * (
-            np.inner(SS['n_K'] + 1.0 - PD['eta_1_K'], E_log_u_K) +
-            np.inner(ngt_K + HD['gamma'] - PD['eta_0_K'], E_log_1mu_K))
-    # Entropy term
-    if SS_for_loss is None:
-        loss_alloc_entropy = 0.0
-    else:
-        loss_alloc_entropy = np.sum(SS_for_loss['H_resp_K'])
-    return loss_alloc_cumulant + loss_alloc_slack + loss_alloc_entropy
+    rho_K = GP['rho_K']
+    omega_K = GP['omega_K']
+    K = rho.size
+    eta_1_K = rho_K * omega_K
+    eta_0_K = (1 - rho_K) * omega_K
+    digammaBoth = digamma(eta_1_K + eta_0_K)
+    E_log_u_K = digamma(eta_1_K) - digammaBoth
+    E_log_1mu_K = digamma(eta_0_K) - digammaBoth
 
+    Ltop_c_p = K * c_Beta(1, gamma)
+    Ltop_c_q = - c_Beta(eta1, eta0)
+    Ltop_cDiff = Ltop_c_p + Ltop_c_q
+    Ltop_logpDiff = np.inner(1.0 - eta_1_K, E_log_u_K) + \
+        np.inner(gamma - eta_0_K, E_log_1mu_K)
+
+    LcDsur_const = nDoc * K * np.log(alpha)
+    LcDsur_rhoomega = nDoc * np.sum(ElogU) + \
+        nDoc * np.inner(kvec(K), Elog1mU)
+    L_alloc_rho = Ltop_cDiff + Ltop_logpDiff + LcDsur_const + LcDsur_rhoomega
+
+
+    L_entropy = np.sum(SS_loss['H_resp_K'])
+
+    # Cumulant term
+    L_alloc_cDir_theta = -1 * (
+        SS_loss['gammaln_sum_theta']
+        - SS_loss['gammaln_theta_K']
+        - SS_loss['gammaln_theta_rem'])
+
+    # Slack term which depends only on cached theta terms
+    L_alloc_slack_theta = np.sum(SS_loss['slack_theta_K']) \
+        + SS_loss['slack_theta_rem']
+
+    # Slack term which depends on rho
+    E_proba_K = calc_E_proba_K(rho_K)
+    E_proba_gt_K = 1 - np.cumsum(E_proba_gt_K)    
+    L_alloc_slack_rho = alpha * (
+        np.inner(E_proba_K, SS_update['sum_log_pi_K']) +
+        np.inner(E_proba_gt_K, SS_update['sum_log_pi_rem_K']))
+
+    return (L_alloc_rho + L_entropy + L_alloc_cDir_theta
+        + L_alloc_slack_theta + L_alloc_slack_rho)
 
 # LOCAL STEP
 def calc_local_params(

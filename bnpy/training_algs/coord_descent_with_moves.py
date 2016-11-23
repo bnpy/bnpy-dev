@@ -65,11 +65,14 @@ def fit(
     SS_update = None
     SS_loss = None
     for lap_id in range(n_laps):
+        cur_lap = lap_id
+
         plan_dict_list = hmod.make_plans_for_proposals(
             mod_list, data, LP, SS_update, SS_loss, GP, HP,
             move_names=move_names,
             cur_uids_K=uids_K,
             uid_generator=uid_generator,
+            cur_lap=cur_lap,
             **move_plan_kwargs)
 
         # LOCAL STEP
@@ -95,7 +98,7 @@ def fit(
             mod_list, SS_update, GP, HP)
         loss = hmod.calc_loss_from_summaries(
             mod_list, GP, HP, SS_update, SS_loss)
-        print loss
+        print "loss=% .3e after global update" % loss
         print SS_update['n_K']
         # Evaluate any proposals
         GP, SS_update, SS_loss, loss, uids_K = hmod.evaluate_proposals(
@@ -104,9 +107,16 @@ def fit(
             cur_loss=loss,
             cur_uids_K=uids_K,
             **move_eval_kwargs)
-        print loss
+        print "loss=% .3e after proposals" % loss
         print SS_update['n_K']
 
+        GP, SS_update, SS_loss, loss, uids_K = \
+            hmod.reorder_summaries_and_update_params(
+                mod_list, GP, SS_update, SS_loss, HP,
+                cur_loss=loss,
+                cur_uids_K=uids_K)
+        print "loss=% .3e after sorting" % loss
+        print SS_update['n_K']
         loss_history.append(loss)
 
     return GP, dict(
@@ -116,7 +126,7 @@ def fit(
         loss_history=loss_history)
 
 if __name__ == '__main__':
-    data, mod_list, _, kwargs = parse_user_input_into_kwarg_dict()
+    data, mod_list, alg_name, kwargs = parse_user_input_into_kwarg_dict()
 
     if data is None:
         prng = np.random.RandomState(0)
@@ -124,18 +134,18 @@ if __name__ == '__main__':
         X_b_NbD = 0.1 * prng.randn(500, 3) + 0
         X_c_NcD = 0.1 * prng.randn(5, 3) + 5
         X_ND = np.vstack([X_a_NaD, X_b_NbD, X_c_NcD])
+        prng.shuffle(X_ND)
 
-    for key in kwargs:
+    print 'User input'
+    for key in sorted(kwargs.keys()):
         print key, kwargs[key]
-    GP, HP, _, local_step_kwargs, extra_kwargs = \
+    GP, HP, _, local_step_kwargs, move_plan_kwargs, extra_kwargs = \
         hmod.create_and_initialize_hierarchical_model_for_dataset(
             mod_list, X_ND, **kwargs)
-
     data = bnpy.data.XData(X_ND)
     fit(mod_list, data, GP, HP,
         local_step_kwargs=local_step_kwargs,
-        move_plan_kwargs=dict(
-            s_Knew=3),
+        move_plan_kwargs=move_plan_kwargs,
         **extra_kwargs)
     
     """

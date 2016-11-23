@@ -1,4 +1,7 @@
 import numpy as np
+
+LOSS_TOL = 0.0001
+
 from dp_mix_vb_merge_proposals import \
     make_plans_for_merge_proposals, \
     calc_seed_summaries_for_merge_proposals, \
@@ -11,8 +14,8 @@ from dp_mix_vb_split_proposals import \
 
 possible_proposal_map = dict(
     merge=True,
-    birth=False,
     split=True,
+    birth=False,
     delete=False,
     reorder=False,
     )
@@ -20,17 +23,23 @@ possible_proposal_map = dict(
 default_merge_kwargs = dict(
     m_select_procedure='all_pairs',
     m_start_lap=0.0,
-    m_stop_lap=None,
+    m_stop_lap=np.inf,
     )
 
+default_split_kwargs = dict(
+    s_start_lap=0.0,
+    s_stop_lap=np.inf,
+    s_Knew=2)
 
 def make_plans_for_proposals(
         data=None, LP=None, SSU=None, SSL=None, GP=None, HP=None,
         move_names=None,
         cur_uids_K=None,
-        cur_lap_frac=None,
+        cur_lap=None,
         m_start_lap=default_merge_kwargs['m_start_lap'],
         m_stop_lap=default_merge_kwargs['m_stop_lap'],
+        s_start_lap=default_split_kwargs['s_start_lap'],
+        s_stop_lap=default_split_kwargs['s_stop_lap'],
         **plan_kwargs):
     '''
     '''
@@ -41,12 +50,16 @@ def make_plans_for_proposals(
         if move_name not in possible_proposal_map:
             continue
         if move_name == 'merge':
+            if cur_lap < m_start_lap or cur_lap > m_stop_lap:
+                continue
             plan_list = make_plans_for_merge_proposals(
                 data, LP, SSU, SSL, GP, HP,
                 cur_uids_K=cur_uids_K,
                 **plan_kwargs)
             all_plan_list.extend(plan_list)
-        if move_name == 'split':
+        elif move_name == 'split':
+            if cur_lap < s_start_lap or cur_lap > s_stop_lap:
+                continue
             plan_list = make_plans_for_split_proposals(
                 data, LP, SSU, SSL, GP, HP,
                 cur_uids_K=cur_uids_K,
@@ -106,6 +119,7 @@ def evaluate_proposals(
             affected_uids = [uidA, uidB]
             if uidA in accepted_uids or uidB in accepted_uids:
                 continue
+            loss_tol = LOSS_TOL
             prop_SSU, prop_SSL, prop_uids_K = \
                 make_full_summaries_from_seed_for_merge_proposal(
                     SS_update=SSU,
@@ -118,6 +132,7 @@ def evaluate_proposals(
             affected_uids = [uid]
             if uid in accepted_uids:
                 continue
+            loss_tol = 0.0
             prop_SSU, prop_SSL, prop_uids_K = \
                 make_full_summaries_from_seed_for_split_proposal(
                     SS_update=SSU,
@@ -129,7 +144,7 @@ def evaluate_proposals(
             None, prop_SSU, prop_SSL)
         prop_loss = calc_loss(prop_GP, prop_SSU, prop_SSL)
         N = float(np.sum(prop_SSU['n_K']))
-        if (prop_loss / N) < (cur_loss / N): #+ 1e-5):
+        if (prop_loss / N) < (cur_loss / N + loss_tol):
             # ACCEPT
             GP = prop_GP
             SSU = prop_SSU
