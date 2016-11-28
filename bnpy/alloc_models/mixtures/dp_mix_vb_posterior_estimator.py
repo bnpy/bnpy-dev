@@ -47,6 +47,14 @@ def init_global_params(
     info_dict = dict()
     return param_dict, info_dict
 
+def to_common_params(GP, **kwargs):
+    ''' Convert global params to common point estimate
+
+    Returns
+    -------
+    proba_K : 1D array, size K
+    '''
+    return dict(proba_K=calc_E_alloc_proba_K(**GP))
 
 def calc_loss_from_local_params(data, LP, param_dict, hyper_dict):
     pass
@@ -106,10 +114,11 @@ def calc_loss_from_summaries(
             np.inner(SS['n_K'] + 1.0 - PD['eta_1_K'], E_log_u_K) +
             np.inner(ngt_K + HD['gamma'] - PD['eta_0_K'], E_log_1mu_K))
     # Entropy term
+    # Negated because of loss = - log proba
     if SS_for_loss is None:
         loss_alloc_entropy = 0.0
     else:
-        loss_alloc_entropy = np.sum(SS_for_loss['H_resp_K'])
+        loss_alloc_entropy = -1 * np.sum(SS_for_loss['H_resp_K'])
     return loss_alloc_cumulant + loss_alloc_slack + loss_alloc_entropy
 
 
@@ -238,6 +247,27 @@ def reorder_summaries_and_update_params(
 
 
 # UTIL EXPECTATIONS
+def calc_E_alloc_proba_K(eta_0_K=None, eta_1_K=None, **kwargs):
+    ''' Compute expected probability of each cluster E[\pi_k]
+
+    Will not sum to one, since will be missing "remainder" term
+
+    Returns
+    -------
+    proba_K : 1D array, size K
+        sum will be positive and less than 1.0
+
+    Examples
+    --------
+    >>> calc_E_alloc_proba_K(eta_1_K=[1, 1], eta_0_K=[1, 1])
+    array([ 0.5 ,  0.25])
+    '''
+    eta_1_K = np.asarray(eta_1_K, dtype=np.float64)
+    eta_0_K = np.asarray(eta_0_K, dtype=np.float64)
+    proba_K = eta_1_K / (eta_1_K + eta_0_K)
+    proba_K[1:] *= np.cumprod(1.0 - proba_K[:-1])
+    return proba_K
+
 def E_log_alloc_proba_K(eta_0_K=None, eta_1_K=None, **kwargs):
     ''' Compute log probability of each cluster E[ log \pi_k ]
 

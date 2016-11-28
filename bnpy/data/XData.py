@@ -96,9 +96,9 @@ class XData(object):
 
         Examples
         --------
-        >>> dataset_path = os.environ["BNPYDATADIR"]
-        >>> dataset = XData.read_mat(
-        ...     os.path.join(dataset_path, 'AsteriskK8', 'x_dataset.mat'))
+        >>> import bnpy
+        >>> dataset = bnpy.data.XData.read_mat(
+        ...     os.path.join(bnpy.DATASET_PATH, 'AsteriskK8', 'x_dataset.mat'))
         >>> dataset.dim
         2
         '''
@@ -127,9 +127,9 @@ class XData(object):
             
         Examples
         --------
-        >>> dataset_path = os.environ["BNPYDATADIR"]
-        >>> dataset = XData.read_npz(
-        ...     os.path.join(dataset_path, 'AsteriskK8', 'x_dataset.npz'))
+        >>> import bnpy
+        >>> dataset = bnpy.data.XData.read_npz(
+        ...     os.path.join(bnpy.DATASET_PATH, 'AsteriskK8', 'x_dataset.npz'))
         >>> dataset.dim
         2
         '''
@@ -153,9 +153,9 @@ class XData(object):
             
         Examples
         --------
-        >>> dataset_path = os.environ["BNPYDATADIR"]
-        >>> dataset = XData.read_csv(
-        ...     os.path.join(dataset_path, 'AsteriskK8', 'x_dataset.csv'))
+        >>> import bnpy
+        >>> dataset = bnpy.data.XData.read_csv(
+        ...     os.path.join(bnpy.DATASET_PATH, 'AsteriskK8', 'x_dataset.csv'))
         >>> dataset.dim
         2
         >>> dataset.column_names
@@ -205,7 +205,8 @@ class XData(object):
             TrueZ=TrueZ,
             **kwargs)
 
-    def __init__(self,
+    def __init__(
+            self,
             X=None,
             nObsTotal=None,
             TrueZ=None,
@@ -228,6 +229,8 @@ class XData(object):
         self.X : 2D array, size N x D
             with standardized dtype, alignment, byteorder.
         '''
+        assert X is not None
+
         if dtype == 'auto':
             dtype = X.dtype
         if not do_copy and X.dtype == dtype:
@@ -353,7 +356,7 @@ class XData(object):
 
         Parameters
         -------
-        keep_id_list : 1D array_like
+        keep_id_list : 1D array_like or slice_like
             Identifies units (rows) of X to use for subset.
         doTrackFullSize : boolean
             If True, return DataObj with same nObsTotal value as this
@@ -387,13 +390,21 @@ class XData(object):
         else:
             nObsTotal = None
 
+        if hasattr(self, 'row_names'):
+            if isinstance(example_id_list, slice):
+                row_names = self.row_names[example_id_list]
+            else:
+                row_names = [self.row_names[i] for i in example_id_list]
+        else:
+            row_names = None
+
         return XData(
             X=newX,
             Xprev=newXprev,
             Y=newY,
             nObsTotal=nObsTotal,
-            row_names=[self.row_names[i] for i in example_id_list],
             TrueZ=newTrueZ,
+            row_names=row_names,
             )
 
     def add_data(self, XDataObj):

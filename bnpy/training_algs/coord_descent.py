@@ -13,6 +13,7 @@ default_alg_kwargs = dict(
     n_laps=1,
     do_loss_after_local=True,
     do_loss_after_global=True,
+    do_reorder=True,
     )
 
 def fit(
@@ -21,6 +22,7 @@ def fit(
         n_laps=default_alg_kwargs['n_laps'],
         do_loss_after_local=default_alg_kwargs['do_loss_after_local'],
         do_loss_after_global=default_alg_kwargs['do_loss_after_global'],
+        do_reorder=default_alg_kwargs['do_reorder'],
         **alg_kwargs):
     ''' Run full-dataset coordinate descent training on specific dataset
 
@@ -40,25 +42,37 @@ def fit(
             mod_list, data, GP, HP, **local_step_kwargs)
 
         # SUMMARY STEP
-        SS = hmod.summarize_local_params_for_update(
+        SS_update = hmod.summarize_local_params_for_update(
             mod_list, data, LP)
-        SS_for_loss = hmod.summarize_local_params_for_loss(
+        SS_loss = hmod.summarize_local_params_for_loss(
             mod_list, data, LP)
 
         # Update global params
         GP = hmod.update_global_params_from_summaries(
-            mod_list, SS, GP, HP)
+            mod_list, SS_update, GP, HP)
 
         if do_loss_after_global:
             loss = hmod.calc_loss_from_summaries(
-                mod_list, GP, HP, SS, SS_for_loss)
-            loss_history.append(loss)
+                mod_list, GP, HP, SS_update, SS_loss)
             print "% .5e" % loss
+            if len(loss_history) > 0:
+                if loss > (
+                        loss_history[-1] + 1e-9 * np.abs(loss_history[-1])):
+                    print '*********^^'
+            loss_history.append(loss)
+
+        if do_reorder:
+            GP, SS_update, SS_loss, loss, _ = \
+                hmod.reorder_summaries_and_update_params(
+                    mod_list, GP, SS_update, SS_loss, HP,
+                    cur_loss=loss)
 
     return GP, dict(
-        SS=SS,
-        SS_for_loss=SS_for_loss,
-        loss_history=loss_history)
+        SS_update=SS_update,
+        SS_loss=SS_loss,
+        loss_history=loss_history,
+        mod_list=mod_list,
+        **hmod.make_function_dict(mod_list))
 
 if __name__ == '__main__':
     data, mod_list, _, kwargs = parse_user_input_into_kwarg_dict()

@@ -127,7 +127,6 @@ def fit(
 
 if __name__ == '__main__':
     data, mod_list, alg_name, kwargs = parse_user_input_into_kwarg_dict()
-
     if data is None:
         prng = np.random.RandomState(0)
         X_a_NaD = 0.1 * prng.randn(500, 3) - 5
@@ -135,54 +134,14 @@ if __name__ == '__main__':
         X_c_NcD = 0.1 * prng.randn(5, 3) + 5
         X_ND = np.vstack([X_a_NaD, X_b_NbD, X_c_NcD])
         prng.shuffle(X_ND)
+        data = bnpy.data.XData(X_ND)
 
     print 'User input'
     for key in sorted(kwargs.keys()):
         print key, kwargs[key]
-    GP, HP, _, local_step_kwargs, move_plan_kwargs, extra_kwargs = \
+    GP, HP, _, kwargs_by_use, extra_kwargs = \
         hmod.create_and_initialize_hierarchical_model_for_dataset(
-            mod_list, X_ND, **kwargs)
-    data = bnpy.data.XData(X_ND)
+            mod_list, data, **kwargs)
+    extra_kwargs.update(kwargs_by_use)
     fit(mod_list, data, GP, HP,
-        local_step_kwargs=local_step_kwargs,
-        move_plan_kwargs=move_plan_kwargs,
         **extra_kwargs)
-    
-    """
-    import bnpy.data
-    from bnpy.alloc_models.mixtures.dp_mix_vb_split_proposals import \
-        calc_local_params_for_split_proposal, \
-        calc_seed_summaries_for_split_proposals, \
-        make_full_summaries_from_seed_for_split_proposal
-    data = bnpy.data.XData(X_ND)
-    fdict = hmod.make_function_dict(mod_list)
-    LP = fdict['calc_local_params'](data, GP, HP, **local_step_kwargs)
-
-    '''
-    s_kwargs = kwargs.copy()
-    s_kwargs.update(fdict)
-    prop_LP, prop_uids = calc_local_params_for_split_proposal(
-        data, 
-        LP=LP,
-        GP=GP,
-        HP=HP,
-        uid=0,
-        new_uids=[44,45,46],
-        local_step_kwargs=local_step_kwargs,
-        **s_kwargs)
-    '''
-
-    plan_dict_list = [
-        dict(uid=0, new_uids=[-1, -2, -3, -4]),
-        ]
-    s_kwargs = kwargs.copy()
-    s_kwargs.update(fdict)
-    seed_dict_list = calc_seed_summaries_for_split_proposals(
-        data=data, 
-        LP=LP,
-        GP=GP,
-        HP=HP,
-        plan_dict_list=plan_dict_list,
-        local_step_kwargs=local_step_kwargs,
-        **s_kwargs)
-    """

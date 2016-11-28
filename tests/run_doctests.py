@@ -23,7 +23,7 @@ def test_all_py_files_in_dir(dir_path):
             full_name = os.path.join(root, name)
             if full_name.count('zzz') > 0:
                 continue
-            if full_name.endswith('.py'):
+            if full_name.endswith('.py') and not name.startswith('__init__'):
                 run_doctest_for_py_file(full_name)
 
 def run_doctest_for_py_file(python_file_path):

@@ -1,6 +1,6 @@
 import numpy as np
 
-from bnpy.utils_array.shape_util import as1D, as2D, as3D, toCArray
+from bnpy.utils_array import as1D, as2D, as3D, toCArray
 
 def init_prior_mean_and_covar(
         dataset_or_X,

@@ -12,7 +12,7 @@ def create_and_initialize_hierarchical_model_for_dataset(
         mod_list, dataset, **hyper_kwargs)
 
     # Now create the global parameters
-    param_dict, info_dict = init_global_params(
+    param_dict, init_info_dict = init_global_params(
         mod_list, dataset, hyper_dict, **init_kwargs)
 
     extra_kwargs = dict()
@@ -22,8 +22,15 @@ def create_and_initialize_hierarchical_model_for_dataset(
         if key in local_step_kwargs:
             continue
         extra_kwargs[key] = input_kwargs[key]
-    return (param_dict, hyper_dict, info_dict,
-        local_step_kwargs, move_plan_kwargs, extra_kwargs)
+
+    kwargs_by_use = dict(
+        init_kwargs=init_kwargs,
+        local_step_kwargs=local_step_kwargs,
+        global_step_kwargs=dict(),
+        move_plan_kwargs=move_plan_kwargs,
+        )
+    return (param_dict, hyper_dict, init_info_dict,
+        kwargs_by_use, extra_kwargs)
 
 def make_hyper_kwargs(mod_list, **input_kwargs):
     kwargs = dict()
@@ -80,6 +87,14 @@ def init_global_params(mod_list, data, hyper_dict, **init_kwargs):
         param_dict.update(cur_param_dict)
         info_dict.update(cur_info_dict)
     return param_dict, info_dict
+
+def to_common_params(mod_list, GP, **kwargs):
+    ''' Convert provided global parameters into "common" point estimates
+    '''
+    common_GP = dict()
+    for mod in mod_list:
+        common_GP.update(mod.to_common_params(GP, **kwargs))
+    return common_GP
 
 def calc_local_params(
         mod_list, data, param_dict,
@@ -199,6 +214,22 @@ def reorder_summaries_and_update_params(
         new_loss = cur_loss
     return GP, SSU, SSL, new_loss, cur_uids_K
 
+def make_model(mod_list, GP, HP):
+    ''' Create a model-like object
+
+    Returns
+    -------
+    model : instance of anonymous class
+    '''
+    fdict = make_function_dict(mod_list)
+    class Model(object):
+        def __init__(self, GP, HP):
+            self.GP = GP
+            self.HP = HP
+        def calc_local_params(self, data, **kwargs):
+            return fdict['calc_local_params'](data, self.GP)
+    return Model(GP, HP)
+
 def make_function_dict(mod_list):
     ''' Create encapsulated functions that do not need mod_list arg
 
@@ -206,6 +237,8 @@ def make_function_dict(mod_list):
     -------
     fdict : dict of function handles
     '''
+    def _to_common_params(GP, **kwargs):
+        return to_common_params(mod_list, GP, **kwargs)
     def _calc_local_params(data, GP, LP=None, **kwargs):
         return calc_local_params(mod_list, data, GP, LP, **kwargs)
     def _summarize_local_params_for_update(data, LP, **kwargs):
@@ -218,6 +251,7 @@ def make_function_dict(mod_list):
     def _init_global_params(data, HP, **kwargs):
         return init_global_params(mod_list, data, HP, **kwargs)
     return dict(
+        to_common_params=_to_common_params,
         calc_local_params=_calc_local_params,
         summarize_local_params_for_update=_summarize_local_params_for_update,
         summarize_local_params_for_loss=_summarize_local_params_for_loss,

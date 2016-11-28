@@ -131,6 +131,36 @@ def init_global_params(
                 **init_kwargs)
     return param_dict, info_dict
 
+def to_common_params(GP, **kwargs):
+    ''' Convert global parameters to common point estimate format
+
+    Returns
+    -------
+    GP : dict with array fields
+        mean_KD : 2D array, size K x D
+        covar_KDD : 2D array, size K x D x D
+
+    Examples
+    --------
+    >>> K = 3
+    >>> D = 2
+    >>> GP = to_common_params(dict(
+    ...     m_KD=np.ones((K,D)),
+    ...     nu_K=np.ones(K),
+    ...     beta_KD=np.ones((K, D))))
+    >>> assert 'mean_KD' in GP
+    >>> assert 'covar_KDD' in GP
+    '''
+    K, D = GP['m_KD'].shape
+    # Set mean locations to the posterior mean
+    mean_KD = GP['m_KD']
+    covar_KDD = np.zeros((K, D, D))
+    for k in xrange(K):
+        covar_KDD[k] = np.diag(E_var_D(
+            nu=GP['nu_K'][k],
+            beta_D=GP['beta_KD'][k]))
+    return dict(mean_KD=mean_KD, covar_KDD=covar_KDD)
+
 def calc_loss_from_summaries(
         param_dict,
         hyper_dict,

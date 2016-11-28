@@ -5,7 +5,7 @@ from XData import XData
 def fetch_batch(
         data,
         batch_id=0,
-        n_batches=10,
+        n_batches=1,
         **kwargs):
     ''' Fetch specific batch of dataset
 
@@ -34,7 +34,12 @@ def fetch_batch(
         return data[batch_slice]
     elif hasattr(data, '__getitem__'):
         return data[batch_id]
-
+    elif hasattr(data, 'make_subset'):
+        list_of_slices = make_list_of_slices_for_dataset(data, n_batches)
+        batch_slice = list_of_slices[batch_id]
+        return data.make_subset(batch_slice)
+    else:
+        raise ValueError("Unrecognized dataset type" + type(data))
 
 def make_list_of_slices_for_dataset(
         data,
@@ -77,7 +82,7 @@ def make_list_of_slices_for_dataset(
     return list_of_slices
 
 def convert_dataset_to_shared_mem_dict(
-        data,
+        dataset,
         **kwargs):
     ''' Convert provided dataset into proper shared memory dictionary
 
@@ -101,8 +106,8 @@ def convert_dataset_to_shared_mem_dict(
     >>> np.allclose(X_sliced, X[slice_interval])
     True
     '''
-    if isinstance(data, np.ndarray):
-        dataset = XData(X=data)
+    if isinstance(dataset, np.ndarray):
+        dataset = XData(X=dataset)
     assert isinstance(dataset, XData)
 
     shared_mem_dict = dataset.to_shared_mem_dict()

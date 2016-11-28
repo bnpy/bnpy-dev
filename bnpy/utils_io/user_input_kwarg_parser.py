@@ -4,6 +4,7 @@ import numpy as np
 import bnpy
 
 def parse_user_input_into_kwarg_dict(
+        dataset_or_path=None,
         alloc_name_map=None,
         obs_name_map=None,
         alg_name_map=None,
@@ -13,8 +14,9 @@ def parse_user_input_into_kwarg_dict(
     Examples
     --------
     >>> dpath, mod_list, alg, kwargs = parse_user_input_into_kwarg_dict(
-    ...     dataset_path=None,
-    ...     mod_names='gauss_diag_covar_vb,dp_mix_vb',
+    ...     dataset=None,
+    ...     alloc_model_name='dp_mix_vb',
+    ...     obs_model_name='gauss_diag_covar_vb',
     ...     K=5,
     ...     init_procedure='LP_from_rand_examples')
     >>> print mod_list[0].__name__
@@ -24,6 +26,7 @@ def parse_user_input_into_kwarg_dict(
     >>> print kwargs
     {'K': 5, 'init_procedure': 'LP_from_rand_examples'}
     '''
+    # Load the required maps here and avoid circular imports...
     if obs_name_map is None:
         obs_name_map = bnpy.obs_models.obs_name_map
     if alloc_name_map is None:
@@ -33,11 +36,18 @@ def parse_user_input_into_kwarg_dict(
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--dataset_path')
+        '--dataset',
+        default=None)
     parser.add_argument(
-        '--mod_names',
-        default='gauss_diag_covar_vb,dp_mix_vb',
-        type=str)
+        '--alloc_model_name',
+        default='dp_mix_vb',
+        type=str,
+        choices=alloc_name_map.keys())
+    parser.add_argument(
+        '--obs_model_name',
+        default='gauss_diag_covar_vb',
+        type=str,
+        choices=obs_name_map.keys())
     parser.add_argument(
         '--alg_name',
         default='coord_descent',
@@ -51,16 +61,23 @@ def parse_user_input_into_kwarg_dict(
 
     unk_kwargs = arglist_to_kwargs(unk_list)
 
-    dataset_path = args.dataset_path
+    if dataset_or_path is None:
+        dataset_or_path = args.dataset
     mod_list = []
-    for mod_name in args.mod_names.split(','):
+    for mod_name in args.obs_model_name.split(','):
         if mod_name in obs_name_map:
             mod_list.append(obs_name_map[mod_name])
-        elif mod_name in alloc_name_map:
-            mod_list.append(alloc_name_map[mod_name])
+        else:
+            raise ValueError(
+                "Unrecognized obs_model_name " + args.obs_model_name)
+
+    if args.alloc_model_name not in alloc_name_map:
+        raise ValueError(
+            "Unrecognized alloc_model_name " + args.alloc_model_name)
+    mod_list.append(alloc_name_map[args.alloc_model_name])
 
     alg_module = alg_name_map[args.alg_name]
-    return dataset_path, mod_list, alg_module, unk_kwargs
+    return dataset_or_path, mod_list, alg_module, unk_kwargs
 
 def kwargs_to_arglist(**kwargs):
     ''' Transform dict key/value pairs into an interleaved list.
